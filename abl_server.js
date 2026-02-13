@@ -8,7 +8,7 @@ const io = require('socket.io')(httpServer, {
   cors: {
     //origin: "http://192.168.1.116:8080",    // Doma
     //origin: "http://10.0.239.86:8080",    // UNIN
-    origin: "https://your-app-name.onrender.com",
+    origin: "*",
 
     methods: ["GET", "POST"]
   }
