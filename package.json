@@ -1,0 +1,13 @@
+{
+  "name": "anchor-lww-server",
+  "version": "1.0.0",
+  "description": "Spatial Anchor LWW Server",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node abl_server.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.6.2"
+  }
+}
