@@ -767,6 +767,8 @@ map.on("singleclick", function(evt) {
 
   inputContainer.appendChild(input);
   //input.focus();
+  input.focus({ preventScroll: true });
+
 
   // Enter key triggers save
   input.addEventListener("keydown", function(e) {
