@@ -173,6 +173,7 @@ html, body {
     <div id="inputContainer"></div>
     <button id="saveBtn">Save</button>
     <button id="deleteBtn">Delete</button>
+    <button id="cancelBtn">Cancel</button>
   </div>
 
   <button class="floating-btn" id="locateBtn">📍</button>
@@ -311,6 +312,9 @@ const htrs96 = ol.proj.get('EPSG:3765');
 
 
 // ================= PRESENCE LAYER =================
+
+let gpsEnabled = false;
+let presenceWatchId = null;
 
 const presenceSource = new ol.source.Vector();
 const presenceLayer = new ol.layer.Vector({ source: presenceSource });
@@ -760,8 +764,20 @@ map.on("singleclick", function(evt) {
     }
   }
 
+
   inputContainer.appendChild(input);
+  input.focus();
+
+  // Enter key triggers save
+  input.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      document.getElementById("saveBtn").click();
+    }
+  });
+
   editor.classList.add("active");
+
 });
 
 /* ================= SAVE / DELETE ================= */
@@ -836,6 +852,15 @@ document.getElementById("deleteBtn").onclick = (e) => {
   editor.classList.remove("active");
 };
 
+
+document.getElementById("cancelBtn").onclick = (e) => {
+  e.stopPropagation();
+  editor.classList.remove("active");
+  lastTapCoord = null;
+};
+
+
+
 /* ================= GPS and PRESENCE ================= */
 
 function updateGPS(position) {
@@ -885,7 +910,7 @@ document.getElementById("locateBtn").onclick = () => {
 let watchId = null;
 let lastCoord = null;
 
-/*
+
 document.getElementById("trackBtn").onclick = function() {
   if (watchId === null) {
     watchId = navigator.geolocation.watchPosition(
@@ -922,76 +947,9 @@ document.getElementById("trackBtn").onclick = function() {
   }
 };
 
-*/
 
 
-document.getElementById("trackBtn").onclick = function() {
 
-  if (watchId === null) {
-
-    watchId = navigator.geolocation.watchPosition(
-      pos => {
-
-        const coord = updateGPS(pos);
-
-        const MOVE_THRESHOLD = 3;           // camera recenter threshold
-        const PRESENCE_THRESHOLD = 20;      // broadcast threshold
-
-        // ----------------------------
-        // Camera recenter logic (3m)
-        // ----------------------------
-        if (!lastCoord) {
-          map.getView().animate({ center: coord, duration: 300 });
-          lastCoord = coord;
-        } else {
-          const dx = coord[0] - lastCoord[0];
-          const dy = coord[1] - lastCoord[1];
-          const distance = Math.sqrt(dx*dx + dy*dy);
-
-          if (distance > MOVE_THRESHOLD) {
-            map.getView().animate({ center: coord, duration: 300 });
-            lastCoord = coord;
-          }
-        }
-
-        // ----------------------------
-        // Presence broadcast logic (20m)
-        // ----------------------------
-        if (!lastPresenceCoord) {
-          lastPresenceCoord = coord;
-          sendPresence(coord);
-        } else {
-          const dxp = coord[0] - lastPresenceCoord[0];
-          const dyp = coord[1] - lastPresenceCoord[1];
-          const dp = Math.sqrt(dxp*dxp + dyp*dyp);
-
-          if (dp > PRESENCE_THRESHOLD) {
-            lastPresenceCoord = coord;
-            sendPresence(coord);
-          }
-        }
-
-      },
-      () => showToast("Last GPS positioning failed"),
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000
-      }
-    );
-
-    this.classList.add("active");
-
-  } else {
-
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-    lastCoord = null;
-    lastPresenceCoord = null;   // reset presence baseline
-    this.classList.remove("active");
-
-  }
-};
 
 
 
@@ -1159,6 +1117,49 @@ function colorFromString(str) {
   const hue = hash % 360;
   return `hsl(${hue}, 70%, 50%)`;
 }
+
+
+
+// ================= AUTO PRESENCE =================
+
+function startPresenceWatch() {
+
+  if (presenceWatchId !== null) return;
+
+  presenceWatchId = navigator.geolocation.watchPosition(
+    pos => {
+
+      const coord = updateGPS(pos);
+
+      if (!lastPresenceCoord) {
+        lastPresenceCoord = coord;
+        sendPresence(coord);
+        return;
+      }
+
+      const dx = coord[0] - lastPresenceCoord[0];
+      const dy = coord[1] - lastPresenceCoord[1];
+      const distance = Math.sqrt(dx*dx + dy*dy);
+
+      if (distance > PRESENCE_MOVE_THRESHOLD) {
+        lastPresenceCoord = coord;
+        sendPresence(coord);
+      }
+
+    },
+    err => {
+      console.log("Presence GPS error:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
+    }
+  );
+}
+
+// Start immediately on page load
+startPresenceWatch();
 
 
 
