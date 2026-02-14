@@ -309,6 +309,24 @@ proj4.defs('EPSG:3765',
 ol.proj.proj4.register(proj4);
 const htrs96 = ol.proj.get('EPSG:3765');
 
+
+// ================= PRESENCE LAYER =================
+
+const presenceSource = new ol.source.Vector();
+const presenceLayer = new ol.layer.Vector({ source: presenceSource });
+
+// nick -> { history: [{x,y,ts}], disconnected: bool, lastUpdate }
+const presenceMap = new Map();
+
+const MAX_HISTORY = 3;
+const MAX_TIME_WINDOW_MS = 120000;   // 2 minutes
+const MAX_TRACK_LENGTH_M = 200;
+const STALE_TIMEOUT_MS = 60000;      // 1 minute
+const PRESENCE_MOVE_THRESHOLD = 20;  // meters
+
+let lastPresenceCoord = null;
+
+
 /* ================= MAP ================= */
 
 const DOF = new ol.layer.Tile({
@@ -326,7 +344,7 @@ const anchorLayer = new ol.layer.Vector({ source: anchorSource });
 
 const map = new ol.Map({
   target: 'map',
-  layers: [DOF, gpsLayer, anchorLayer],
+  layers: [DOF, gpsLayer, anchorLayer, presenceLayer],
   view: new ol.View({
     projection: htrs96,
     center: [500000, 5070000],
@@ -818,7 +836,7 @@ document.getElementById("deleteBtn").onclick = (e) => {
   editor.classList.remove("active");
 };
 
-/* ================= GPS ================= */
+/* ================= GPS and PRESENCE ================= */
 
 function updateGPS(position) {
   const lon = position.coords.longitude;
@@ -867,6 +885,7 @@ document.getElementById("locateBtn").onclick = () => {
 let watchId = null;
 let lastCoord = null;
 
+/*
 document.getElementById("trackBtn").onclick = function() {
   if (watchId === null) {
     watchId = navigator.geolocation.watchPosition(
@@ -902,6 +921,246 @@ document.getElementById("trackBtn").onclick = function() {
     this.classList.remove("active");
   }
 };
+
+*/
+
+
+document.getElementById("trackBtn").onclick = function() {
+
+  if (watchId === null) {
+
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+
+        const coord = updateGPS(pos);
+
+        const MOVE_THRESHOLD = 3;           // camera recenter threshold
+        const PRESENCE_THRESHOLD = 20;      // broadcast threshold
+
+        // ----------------------------
+        // Camera recenter logic (3m)
+        // ----------------------------
+        if (!lastCoord) {
+          map.getView().animate({ center: coord, duration: 300 });
+          lastCoord = coord;
+        } else {
+          const dx = coord[0] - lastCoord[0];
+          const dy = coord[1] - lastCoord[1];
+          const distance = Math.sqrt(dx*dx + dy*dy);
+
+          if (distance > MOVE_THRESHOLD) {
+            map.getView().animate({ center: coord, duration: 300 });
+            lastCoord = coord;
+          }
+        }
+
+        // ----------------------------
+        // Presence broadcast logic (20m)
+        // ----------------------------
+        if (!lastPresenceCoord) {
+          lastPresenceCoord = coord;
+          sendPresence(coord);
+        } else {
+          const dxp = coord[0] - lastPresenceCoord[0];
+          const dyp = coord[1] - lastPresenceCoord[1];
+          const dp = Math.sqrt(dxp*dxp + dyp*dyp);
+
+          if (dp > PRESENCE_THRESHOLD) {
+            lastPresenceCoord = coord;
+            sendPresence(coord);
+          }
+        }
+
+      },
+      () => showToast("Last GPS positioning failed"),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+      }
+    );
+
+    this.classList.add("active");
+
+  } else {
+
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    lastCoord = null;
+    lastPresenceCoord = null;   // reset presence baseline
+    this.classList.remove("active");
+
+  }
+};
+
+
+
+
+function sendPresence(coord) {
+  if (!socket.connected) return;
+
+  socket.emit("presence_update", {
+    nick: USER_NICK,
+    actor: CLIENT_ID,
+    x: coord[0],
+    y: coord[1],
+    ts: Date.now()
+  });
+}
+
+
+socket.on("presence_update", (data) => {
+  if (!data || !data.nick || data.nick === USER_NICK) return;
+
+  const key = data.actor || data.nick;
+
+  let entry = presenceMap.get(key);
+  if (!entry) {
+    entry = { history: [], disconnected: false };
+    presenceMap.set(key, entry);
+  }
+
+  entry.disconnected = false;
+  entry.lastUpdate = Date.now();
+
+  entry.history.push({ x: data.x, y: data.y, ts: data.ts });
+
+  if (entry.history.length > MAX_HISTORY) {
+    entry.history.shift();
+  }
+
+  renderPresence();
+});
+
+socket.on("presence_disconnect", ({ nick }) => {
+
+  for (let [key, entry] of presenceMap.entries()) {
+    if (key === nick || entry.nick === nick) {
+      entry.disconnected = true;
+    }
+  }
+
+  renderPresence();
+});
+
+
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+
+  for (let [key, entry] of presenceMap.entries()) {
+    if (entry.lastUpdate && now - entry.lastUpdate > STALE_TIMEOUT_MS) {
+      presenceMap.delete(key);
+      changed = true;
+    }
+  }
+
+  if (changed) renderPresence();
+}, 10000);
+
+
+function renderPresence() {
+
+  presenceSource.clear();
+
+  presenceMap.forEach((entry, key) => {
+
+    if (!entry.history.length) return;
+
+    const history = entry.history;
+
+    const first = history[0];
+    const last  = history[history.length - 1];
+
+    const timeSpan = last.ts - first.ts;
+
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+    const trackLength = Math.sqrt(dx*dx + dy*dy);
+
+    const showDirection =
+      history.length >= 2 &&
+      timeSpan < MAX_TIME_WINDOW_MS &&
+      trackLength < MAX_TRACK_LENGTH_M &&
+      !entry.disconnected;
+
+    const color = entry.disconnected
+      ? "#9e9e9e"
+      : colorFromString(key);
+
+    // Draw trail
+    if (showDirection) {
+      const coords = history.map(p => [p.x, p.y]);
+
+      const line = new ol.Feature({
+        geometry: new ol.geom.LineString(coords)
+      });
+
+      line.setStyle(new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color,
+          width: 2
+        })
+      }));
+
+      presenceSource.addFeature(line);
+
+      // Arrow at end
+      const prev = history[history.length - 2];
+      const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
+
+      const arrow = new ol.Feature({
+        geometry: new ol.geom.Point([last.x, last.y])
+      });
+
+      arrow.setStyle(new ol.style.Style({
+        image: new ol.style.RegularShape({
+          points: 3,
+          radius: 8,
+          rotation: -angle,
+          fill: new ol.style.Fill({ color }),
+          stroke: new ol.style.Stroke({ color: "#fff", width: 1 })
+        })
+      }));
+
+      presenceSource.addFeature(arrow);
+    }
+
+    // Always draw last position
+    const point = new ol.Feature({
+      geometry: new ol.geom.Point([last.x, last.y])
+    });
+
+    point.setStyle(new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: 5,
+        fill: new ol.style.Fill({ color }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 2 })
+      }),
+      text: new ol.style.Text({
+        text: key,
+        offsetY: -14,
+        fill: new ol.style.Fill({ color: "#000" }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 3 })
+      })
+    }));
+
+    presenceSource.addFeature(point);
+
+  });
+}
+
+
+function colorFromString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = hash % 360;
+  return `hsl(${hue}, 70%, 50%)`;
+}
+
+
 
 /* ================= ADMIN ACTIONS ================= */
 
