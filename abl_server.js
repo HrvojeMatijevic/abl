@@ -6,35 +6,43 @@ const io = require('socket.io')(httpServer, {
   pingTimeout: 100000,
   pingInterval: 300000,
   cors: {
-    //origin: "http://192.168.1.116:8080",    // Doma
-    //origin: "http://10.0.239.86:8080",    // UNIN
     origin: "*",
-
     methods: ["GET", "POST"]
   }
 });
 
-const LOG_FILE = "op_log.json";
+const LOG_FILE = "state.json";
 
+// ----------------------
+// State
+// ----------------------
+let currentEpoch = 1;
 let op_log = [];
 
 // ----------------------
-// Load log at startup
+// Load state at startup
 // ----------------------
 if (fs.existsSync(LOG_FILE)) {
   try {
-    op_log = JSON.parse(fs.readFileSync(LOG_FILE));
-    console.log("Loaded", op_log.length, "ops from disk.");
+    const data = JSON.parse(fs.readFileSync(LOG_FILE));
+    currentEpoch = data.epoch || 1;
+    op_log = data.log || [];
+    console.log("Loaded state. Epoch:", currentEpoch, "Ops:", op_log.length);
   } catch (err) {
-    console.error("Failed to load log:", err);
+    console.error("Failed to load state:", err);
   }
 }
 
 // ----------------------
 // Persist function
 // ----------------------
-function saveLog() {
-  fs.writeFile(LOG_FILE, JSON.stringify(op_log, null, 2), err => {
+function saveState() {
+  const state = {
+    epoch: currentEpoch,
+    log: op_log
+  };
+
+  fs.writeFile(LOG_FILE, JSON.stringify(state, null, 2), err => {
     if (err) console.error("Write failed:", err);
   });
 }
@@ -46,23 +54,58 @@ io.on('connection', socket => {
 
   console.log("Client connected:", socket.id);
 
-  // Send entire log
-  socket.emit('full_log', op_log);
+  // Send epoch + full log
+  socket.emit('sync_full', {
+    epoch: currentEpoch,
+    log: op_log
+  });
 
+  // ----------------------
+  // Handle new op
+  // ----------------------
   socket.on('op', (op) => {
 
     if (!op || !op.op_id) return;
 
-    // Append blindly (CRDT handles duplicates client-side)
+    // Reject wrong epoch
+    if (op.epoch !== currentEpoch) {
+      console.log("Rejected op from old epoch:", op.epoch);
+      return;
+    }
+
+    // Append (CRDT handles duplicates client-side)
     op_log.push(op);
 
     // Persist periodically
     if (op_log.length % 5 === 0) {
-      saveLog();
+      saveState();
     }
 
-    // Broadcast to all clients
     io.emit('op', op);
+  });
+
+  // ----------------------
+  // Admin reset
+  // ----------------------
+  socket.on('admin_reset', (payload) => {
+
+    const ADMIN_NICK = "hrvoje";  // change as needed
+
+    if (!payload || payload.nick !== ADMIN_NICK) {
+      console.log("Unauthorized reset attempt");
+      return;
+    }
+
+    currentEpoch += 1;
+    op_log = [];
+
+    console.log("System reset. New epoch:", currentEpoch);
+
+    saveState();
+
+    io.emit('epoch_update', {
+      epoch: currentEpoch
+    });
   });
 
   socket.on('disconnect', () => {
