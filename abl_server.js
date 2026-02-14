@@ -20,6 +20,14 @@ let currentEpoch = 1;
 let op_log = [];
 
 // ----------------------
+// Presence (ephemeral)
+// ----------------------
+const presenceNicks = new Map(); 
+// socket.id -> nick
+
+
+
+// ----------------------
 // Load state at startup
 // ----------------------
 if (fs.existsSync(LOG_FILE)) {
@@ -89,7 +97,7 @@ io.on('connection', socket => {
   // ----------------------
   socket.on('admin_reset', (payload) => {
 
-    const ADMIN_NICK = "hrvoje";  // change as needed
+    const ADMIN_NICK = "ImController";  // change as needed
 
     if (!payload || payload.nick !== ADMIN_NICK) {
       console.log("Unauthorized reset attempt");
@@ -108,9 +116,38 @@ io.on('connection', socket => {
     });
   });
 
-  socket.on('disconnect', () => {
-    console.log("Client disconnected:", socket.id);
+
+  // ----------------------
+  // Presence update (relay only)
+  // ----------------------
+  socket.on('presence_update', (data) => {
+
+    if (!data || !data.nick) return;
+
+    // remember nick for disconnect event
+    presenceNicks.set(socket.id, data.nick);
+
+    // broadcast to everyone except sender
+    socket.broadcast.emit('presence_update', {
+      nick: data.nick,
+      x: data.x,
+      y: data.y,
+      ts: data.ts
+    });
   });
+
+
+    socket.on('disconnect', () => {
+    console.log("Client disconnected:", socket.id);
+
+    const nick = presenceNicks.get(socket.id);
+
+    if (nick) {
+      io.emit('presence_disconnect', { nick });
+      presenceNicks.delete(socket.id);
+    }
+  });
+
 
 });
 
