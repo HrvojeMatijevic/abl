@@ -1157,7 +1157,7 @@ function renderPresence() {
       const square = new ol.Feature({
         geometry: new ol.geom.Point([last.x, last.y])
       });
-
+/*
       square.setStyle(new ol.style.Style({
         image: new ol.style.RegularShape({
           points: 4,
@@ -1170,6 +1170,55 @@ function renderPresence() {
 	 })
         })
       }));
+*/
+
+
+square.setStyle(new ol.style.Style({
+  image: new ol.style.RegularShape({
+    points: 4,
+    radius: 12,
+    angle: 0,
+    fill: null,
+    stroke: new ol.style.Stroke({
+      color: "#1976d2",  // strong blue
+      width: 3
+    })
+  })
+}));
+
+// Add outer halo
+square.setStyle([
+  new ol.style.Style({
+    image: new ol.style.RegularShape({
+      points: 4,
+      radius: 14,
+      angle: 0,
+      fill: null,
+      stroke: new ol.style.Stroke({
+        color: "#ffffff",
+        width: 5
+      })
+    })
+  }),
+  new ol.style.Style({
+    image: new ol.style.RegularShape({
+      points: 4,
+      radius: 12,
+      angle: 0,
+      fill: null,
+      stroke: new ol.style.Stroke({
+        color: "#1976d2",
+        width: 3
+      })
+    })
+  })
+]);
+
+
+
+
+
+
 
       presenceSource.addFeature(square);
     }
