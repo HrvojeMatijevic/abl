@@ -475,8 +475,10 @@ socket.on("connect", () => {
 
   // --- Redraw user on reconnect ---
   const myEntry = presenceMap.get(USER_NICK);
+console.log("Entry on reconnect:", myEntry);
   if (myEntry) {
     myEntry.disconnected = false;
+    console.log("Marked as active again");
     renderPresence();
   }
 
