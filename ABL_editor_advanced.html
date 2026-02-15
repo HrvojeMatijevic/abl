@@ -472,6 +472,14 @@ reconnectBtn.onclick = () => {
 socket.on("connect", () => {
   console.log("Connected to server");
   netStatus.innerText = "ONLINE";
+
+  // --- Redraw user on reconnect ---
+  const myEntry = presenceMap.get(USER_NICK);
+  if (myEntry) {
+    myEntry.disconnected = false;
+    renderPresence();
+  }
+
   netStatus.style.background = "#4caf50";
   // ask for sync and flush outbox
   socket.emit("request_sync"); // server may ignore; harmless
@@ -969,42 +977,7 @@ function sendPresence(coord) {
 }
 
 
-/*
-socket.on("presence_update", (data) => {
-  if (!data || !data.nick || data.nick === USER_NICK) return;
 
-  const key = data.actor || data.nick;
-
-  let entry = presenceMap.get(key);
-  if (!entry) {
-    entry = { history: [], disconnected: false };
-    presenceMap.set(key, entry);
-  }
-
-  entry.disconnected = false;
-  entry.lastUpdate = Date.now();
-
-  entry.history.push({ x: data.x, y: data.y, ts: data.ts });
-
-  if (entry.history.length > MAX_HISTORY) {
-    entry.history.shift();
-  }
-
-  renderPresence();
-});
-
-
-socket.on("presence_disconnect", ({ nick }) => {
-
-  for (let [key, entry] of presenceMap.entries()) {
-    if (key === nick || entry.nick === nick) {
-      entry.disconnected = true;
-    }
-  }
-
-  renderPresence();
-});
-*/
 
 
 socket.on("presence_update", (data) => {
@@ -1066,98 +1039,7 @@ setInterval(() => {
   if (changed) renderPresence();
 }, 10000);
 
-/*
-function renderPresence() {
 
-  presenceSource.clear();
-
-  presenceMap.forEach((entry, key) => {
-
-    if (!entry.history.length) return;
-
-    const history = entry.history;
-
-    const first = history[0];
-    const last  = history[history.length - 1];
-
-    const timeSpan = last.ts - first.ts;
-
-    const dx = last.x - first.x;
-    const dy = last.y - first.y;
-    const trackLength = Math.sqrt(dx*dx + dy*dy);
-
-    const showDirection =
-      history.length >= 2 &&
-      timeSpan < MAX_TIME_WINDOW_MS &&
-      trackLength < MAX_TRACK_LENGTH_M &&
-      !entry.disconnected;
-
-    const color = entry.disconnected
-      ? "#9e9e9e"
-      : colorFromString(key);
-
-    // Draw trail
-    if (showDirection) {
-      const coords = history.map(p => [p.x, p.y]);
-
-      const line = new ol.Feature({
-        geometry: new ol.geom.LineString(coords)
-      });
-
-      line.setStyle(new ol.style.Style({
-        stroke: new ol.style.Stroke({
-          color,
-          width: 2
-        })
-      }));
-
-      presenceSource.addFeature(line);
-
-      // Arrow at end
-      const prev = history[history.length - 2];
-      const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
-
-      const arrow = new ol.Feature({
-        geometry: new ol.geom.Point([last.x, last.y])
-      });
-
-      arrow.setStyle(new ol.style.Style({
-        image: new ol.style.RegularShape({
-          points: 3,
-          radius: 8,
-          rotation: -angle,
-          fill: new ol.style.Fill({ color }),
-          stroke: new ol.style.Stroke({ color: "#fff", width: 1 })
-        })
-      }));
-
-      presenceSource.addFeature(arrow);
-    }
-
-    // Always draw last position
-    const point = new ol.Feature({
-      geometry: new ol.geom.Point([last.x, last.y])
-    });
-
-    point.setStyle(new ol.style.Style({
-      image: new ol.style.Circle({
-        radius: 5,
-        fill: new ol.style.Fill({ color }),
-        stroke: new ol.style.Stroke({ color: "#fff", width: 2 })
-      }),
-      text: new ol.style.Text({
-        text: key,
-        offsetY: -14,
-        fill: new ol.style.Fill({ color: "#000" }),
-        stroke: new ol.style.Stroke({ color: "#fff", width: 3 })
-      })
-    }));
-
-    presenceSource.addFeature(point);
-
-  });
-}
-*/
 
 
 function renderPresence() {
@@ -1270,9 +1152,9 @@ function renderPresence() {
           angle: 0,          // straight square
           fill: null,
           stroke: new ol.style.Stroke({
-            color,
-            width: 2
-          })
+  		color: "#1976d2",   // fixed blue
+  		width: 2
+	 })
         })
       }));
 
