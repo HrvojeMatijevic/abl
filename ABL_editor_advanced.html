@@ -199,6 +199,13 @@ html, body {
 </div>
 
 <script>
+
+/* ================= VARIOUS GLOBAL VARS ================= */
+let currentGpsCoord = null;
+
+
+
+
 /* ================= DATA MODEL CONFIG ================= */
 
 const APP_CONFIG = {
@@ -475,7 +482,6 @@ socket.on("connect", () => {
 
   // --- Redraw user on reconnect ---
   const myEntry = presenceMap.get(USER_NICK);
-console.log("Entry on reconnect:", myEntry);
   if (myEntry) {
     myEntry.disconnected = false;
     console.log("Marked as active again");
@@ -486,6 +492,11 @@ console.log("Entry on reconnect:", myEntry);
   // ask for sync and flush outbox
   socket.emit("request_sync"); // server may ignore; harmless
   flushOutbox();
+
+  if (currentGpsCoord) {
+    sendPresence(currentGpsCoord);
+  }
+
 });
 
 socket.on("disconnect", (reason) => {
@@ -900,7 +911,7 @@ function updateGPS(position) {
 
   gpsSource.addFeature(circle);
   gpsSource.addFeature(point);
-
+  currentGpsCoord = coord;
   return coord;
 }
 
