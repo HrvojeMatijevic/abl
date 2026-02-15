@@ -1131,7 +1131,7 @@ function renderPresence() {
     const point = new ol.Feature({
       geometry: new ol.geom.Point([last.x, last.y])
     });
-
+/*
     point.setStyle(new ol.style.Style({
       image: new ol.style.Circle({
         radius: 5,
@@ -1145,6 +1145,25 @@ function renderPresence() {
         stroke: new ol.style.Stroke({ color: "#fff", width: 3 })
       })
     }));
+*/
+
+point.setStyle(new ol.style.Style({
+      image: new ol.style.RegularShape({
+    	points: 4,
+    	radius: 6,
+    	angle: 0,
+    	fill: new ol.style.Fill({ color }),
+    	stroke: new ol.style.Stroke({color: "#fff",  width: 3 })
+      }),
+      text: new ol.style.Text({
+        text: key,
+        offsetY: -14,
+        fill: new ol.style.Fill({ color: "#000" }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 3 })
+      })
+    }));
+
+
 
     presenceSource.addFeature(point);
 
@@ -1157,21 +1176,6 @@ function renderPresence() {
       const square = new ol.Feature({
         geometry: new ol.geom.Point([last.x, last.y])
       });
-/*
-      square.setStyle(new ol.style.Style({
-        image: new ol.style.RegularShape({
-          points: 4,
-          radius: 10,        // slightly larger than circle
-          angle: 0,          // straight square
-          fill: null,
-          stroke: new ol.style.Stroke({
-  		color: "#1976d2",   // fixed blue
-  		width: 2
-	 })
-        })
-      }));
-*/
-
 
 square.setStyle(new ol.style.Style({
   image: new ol.style.RegularShape({
