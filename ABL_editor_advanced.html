@@ -969,6 +969,7 @@ function sendPresence(coord) {
 }
 
 
+/*
 socket.on("presence_update", (data) => {
   if (!data || !data.nick || data.nick === USER_NICK) return;
 
@@ -992,6 +993,7 @@ socket.on("presence_update", (data) => {
   renderPresence();
 });
 
+
 socket.on("presence_disconnect", ({ nick }) => {
 
   for (let [key, entry] of presenceMap.entries()) {
@@ -1002,6 +1004,52 @@ socket.on("presence_disconnect", ({ nick }) => {
 
   renderPresence();
 });
+*/
+
+
+socket.on("presence_update", (data) => {
+
+  let entry = presenceMap.get(data.nick);
+
+  if (!entry) {
+    entry = {
+      history: [],
+      disconnected: false
+    };
+    presenceMap.set(data.nick, entry);
+  }
+
+  entry.disconnected = false;  // <--- IMPORTANT
+
+  entry.history.push({
+    x: data.x,
+    y: data.y,
+    ts: data.ts
+  });
+
+  if (entry.history.length > MAX_HISTORY) {
+    entry.history.shift();
+  }
+
+  renderPresence();
+});
+
+
+socket.on("presence_disconnect", ({ nick }) => {
+  const entry = presenceMap.get(nick);
+  if (!entry) return;
+
+  entry.disconnected = true;
+
+  // Keep only last known location
+  if (entry.history.length > 1) {
+    entry.history = [entry.history[entry.history.length - 1]];
+  }
+
+  renderPresence();
+});
+
+
 
 
 setInterval(() => {
@@ -1018,7 +1066,7 @@ setInterval(() => {
   if (changed) renderPresence();
 }, 10000);
 
-
+/*
 function renderPresence() {
 
   presenceSource.clear();
@@ -1109,6 +1157,132 @@ function renderPresence() {
 
   });
 }
+*/
+
+
+function renderPresence() {
+
+  presenceSource.clear();
+
+  presenceMap.forEach((entry, key) => {
+
+    if (!entry.history.length) return;
+
+    const history = entry.history;
+
+    const first = history[0];
+    const last  = history[history.length - 1];
+
+    const timeSpan = last.ts - first.ts;
+
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+    const trackLength = Math.sqrt(dx*dx + dy*dy);
+
+    const showDirection =
+      history.length >= 2 &&
+      timeSpan < MAX_TIME_WINDOW_MS &&
+      trackLength < MAX_TRACK_LENGTH_M &&
+      !entry.disconnected;
+
+    // Keep same identity color always
+    const color = colorFromString(key);
+
+    // ===============================
+    // Draw trail (active users only)
+    // ===============================
+    if (showDirection) {
+
+      const coords = history.map(p => [p.x, p.y]);
+
+      const line = new ol.Feature({
+        geometry: new ol.geom.LineString(coords)
+      });
+
+      line.setStyle(new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color,
+          width: 2
+        })
+      }));
+
+      presenceSource.addFeature(line);
+
+      // Arrow at end
+      const prev = history[history.length - 2];
+      const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
+
+      const arrow = new ol.Feature({
+        geometry: new ol.geom.Point([last.x, last.y])
+      });
+
+      arrow.setStyle(new ol.style.Style({
+        image: new ol.style.RegularShape({
+          points: 3,
+          radius: 8,
+          rotation: -angle,
+          fill: new ol.style.Fill({ color }),
+          stroke: new ol.style.Stroke({ color: "#fff", width: 1 })
+        })
+      }));
+
+      presenceSource.addFeature(arrow);
+    }
+
+    // ===============================
+    // Always draw last position point
+    // ===============================
+
+    const point = new ol.Feature({
+      geometry: new ol.geom.Point([last.x, last.y])
+    });
+
+    point.setStyle(new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: 5,
+        fill: new ol.style.Fill({ color }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 2 })
+      }),
+      text: new ol.style.Text({
+        text: key,
+        offsetY: -14,
+        fill: new ol.style.Fill({ color: "#000" }),
+        stroke: new ol.style.Stroke({ color: "#fff", width: 3 })
+      })
+    }));
+
+    presenceSource.addFeature(point);
+
+    // ===============================
+    // If disconnected → draw square outline
+    // ===============================
+
+    if (entry.disconnected) {
+
+      const square = new ol.Feature({
+        geometry: new ol.geom.Point([last.x, last.y])
+      });
+
+      square.setStyle(new ol.style.Style({
+        image: new ol.style.RegularShape({
+          points: 4,
+          radius: 10,        // slightly larger than circle
+          angle: 0,          // straight square
+          fill: null,
+          stroke: new ol.style.Stroke({
+            color,
+            width: 2
+          })
+        })
+      }));
+
+      presenceSource.addFeature(square);
+    }
+
+  });
+}
+
+
 
 
 function colorFromString(str) {
